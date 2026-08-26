@@ -1,0 +1,4 @@
+{
+    "xml.downloadExternalResources.enabled": true,
+    "cmake.sourceDirectory": "/home/luca/Documents/personal-job/decoda-systems-engineer/skill-test/decoda-skill-test/ros_ws/src/ground_segmenter"
+}
