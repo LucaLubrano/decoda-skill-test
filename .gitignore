@@ -2,3 +2,5 @@
 /ros_ws/build
 /ros_ws/install
 /ros_ws/log
+/ros_ws/src/ground_segmenter/src/test.cpp
+/ros_ws/src/ground_segmenter/src/test
