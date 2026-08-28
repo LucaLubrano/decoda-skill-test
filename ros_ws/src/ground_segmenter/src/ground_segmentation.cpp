@@ -10,6 +10,8 @@
 #include "sensor_msgs/msg/point_cloud2.hpp"
 
 
+#define RANSAC_THRESHOLD 2
+
 class GroundSegmenter : public rclcpp::Node
 {
 public:
@@ -89,7 +91,6 @@ std::vector<pcl::PointXYZ> sample_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr clou
     return point_set;
 }
 
-
 // 3 dimensional cross product - hard coded for simplicity given we are constrained to three dimensional data
 pcl::PointXYZ cross_product(pcl::PointXYZ vector_1, pcl::PointXYZ vector_2){
     // Initialise return vector
@@ -116,12 +117,12 @@ pcl::PointXYZ vector_diff(pcl::PointXYZ vector_a, pcl::PointXYZ vector_b){
 }
 
 // Solves the general solution to a plane from 3 vectors
-Plane generate_plane(pcl::PointXYZ vector_a, pcl::PointXYZ vector_b, pcl::PointXYZ vector_c){
+Plane generate_plane(std::vector<pcl::PointXYZ> vector_set){
     Plane plane;
     
     // coplanar vectors
-    pcl::PointXYZ coplanar_vector_a = vector_diff(vector_b, vector_a);
-    pcl::PointXYZ coplanar_vector_b = vector_diff(vector_c, vector_a);
+    pcl::PointXYZ coplanar_vector_a = vector_diff(vector_set[1], vector_set[0]);
+    pcl::PointXYZ coplanar_vector_b = vector_diff(vector_set[2], vector_set[0]);
 
     std::cout << "edge1: " << coplanar_vector_a.x << "," << coplanar_vector_a.y << "," << coplanar_vector_a.z << std::endl;
     std::cout << "edge2: " << coplanar_vector_b.x << "," << coplanar_vector_b.y << "," << coplanar_vector_b.z << std::endl;
@@ -133,9 +134,51 @@ Plane generate_plane(pcl::PointXYZ vector_a, pcl::PointXYZ vector_b, pcl::PointX
     plane.A = normal_vector.x;
     plane.B = normal_vector.y;
     plane.C = normal_vector.z;
-    plane.D = - (plane.A * vector_a.x) - (plane.B * vector_a.y) - (plane.C * vector_a.z);
+    plane.D = - (plane.A * vector_set[0].x) - (plane.B * vector_set[0].y) - (plane.C * vector_set[0].z);
     return plane;
 }
+
+// Conduct the RANSAC algorithm
+Plane ransac(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, const size_t num_simulations){
+  const size_t total_points = cloud->points.size();
+
+  // initialise loop variables
+  Plane plane_of_best_fit;
+  Plane proposed_plane;
+  pcl::PointXYZ pt;
+  int proposed_num_inliers = 0;
+  int bestfit_num_inliers = 0;
+
+  // iterate over a fixed number of simulations
+  for(size_t i = 0; i < num_simulations; i++){
+    // generate a random plane
+    std::vector<pcl::PointXYZ> rand_pt_set = sample_cloud(cloud);
+    proposed_plane = generate_plane(rand_pt_set);
+    
+    // iterate over the entire cloud and compare to our proposed_plane
+    for(size_t cur_pt_idx = 0; cur_pt_idx < total_points; cur_pt_idx++){
+      // check the current distance from the point to the proposed plane
+      pt = cloud->points[cur_pt_idx];
+      float cur_pt_dist = distance_from_plane(pt, proposed_plane);
+
+      // check if this distance is less than a prescribed threshold
+      if(cur_pt_dist < RANSAC_THRESHOLD){
+        proposed_num_inliers++;
+      }
+    }
+    
+    // Check if the proposed plane beats the current plane of best fit
+    if(proposed_num_inliers > bestfit_num_inliers){
+      plane_of_best_fit = proposed_plane;
+      bestfit_num_inliers = proposed_num_inliers;
+    }
+
+    proposed_num_inliers = 0; // reset for next itr
+  }
+
+  return plane_of_best_fit;
+}
+
 
 };
 
