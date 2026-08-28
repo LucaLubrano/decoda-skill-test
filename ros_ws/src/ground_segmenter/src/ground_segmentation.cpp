@@ -89,6 +89,54 @@ std::vector<pcl::PointXYZ> sample_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr clou
     return point_set;
 }
 
+
+// 3 dimensional cross product - hard coded for simplicity given we are constrained to three dimensional data
+pcl::PointXYZ cross_product(pcl::PointXYZ vector_1, pcl::PointXYZ vector_2){
+    // Initialise return vector
+    pcl::PointXYZ return_vector;
+
+    // Cross product
+    return_vector.x = vector_1.y * vector_2.z - vector_1.z * vector_2.y;
+    return_vector.y = vector_1.z * vector_2.x - vector_1.x * vector_2.z;
+    return_vector.z = vector_1.x * vector_2.y - vector_1.y * vector_2.x;
+
+    return return_vector;
+}
+
+pcl::PointXYZ vector_diff(pcl::PointXYZ vector_a, pcl::PointXYZ vector_b){
+    // Initialise return vector
+    pcl::PointXYZ vector_c;
+
+    // compute difference
+    vector_c.x = vector_a.x - vector_b.x;
+    vector_c.y = vector_a.y - vector_b.y;
+    vector_c.z = vector_a.z - vector_b.z;
+
+    return vector_c;
+}
+
+// Solves the general solution to a plane from 3 vectors
+Plane generate_plane(pcl::PointXYZ vector_a, pcl::PointXYZ vector_b, pcl::PointXYZ vector_c){
+    Plane plane;
+    
+    // coplanar vectors
+    pcl::PointXYZ coplanar_vector_a = vector_diff(vector_b, vector_a);
+    pcl::PointXYZ coplanar_vector_b = vector_diff(vector_c, vector_a);
+
+    std::cout << "edge1: " << coplanar_vector_a.x << "," << coplanar_vector_a.y << "," << coplanar_vector_a.z << std::endl;
+    std::cout << "edge2: " << coplanar_vector_b.x << "," << coplanar_vector_b.y << "," << coplanar_vector_b.z << std::endl;
+
+    // normal vector
+    pcl::PointXYZ normal_vector = cross_product(coplanar_vector_a, coplanar_vector_b);
+
+    // plane
+    plane.A = normal_vector.x;
+    plane.B = normal_vector.y;
+    plane.C = normal_vector.z;
+    plane.D = - (plane.A * vector_a.x) - (plane.B * vector_a.y) - (plane.C * vector_a.z);
+    return plane;
+}
+
 };
 
 int main(int argc, char * argv[])
