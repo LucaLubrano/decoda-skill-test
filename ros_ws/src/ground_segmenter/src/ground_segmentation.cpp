@@ -2,6 +2,7 @@
 #include <memory>
 #include <string>
 #include <math.h>
+#include <random>
 
 #include "rclcpp/rclcpp.hpp"
 #include "pcl_conversions/pcl_conversions.h"
@@ -45,9 +46,15 @@ public:
             RCLCPP_WARN(this->get_logger(), "Point not defined as an inlier or outlier");
           } 
         }
+
+        inlier_publisher_->publish(convert_points(inlier_cloud));
+        outlier_publisher_->publish(convert_points(outlier_cloud));
       };
 
     subscription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/lidar", rclcpp::SensorDataQoS(), topic_callback);
+    inlier_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/ground_points", rclcpp::SensorDataQoS());
+    outlier_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/obstacle_points", rclcpp::SensorDataQoS());
+
   }
   // Struct def for easier usage 
   struct Plane {float A; float B; float C; float D;}; 
@@ -55,15 +62,24 @@ public:
 private:
 // Variable declarations
 rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subscription_;
+rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr inlier_publisher_;
+rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr outlier_publisher_;
 
 // Function declarations
 // Extract points from PointCloud2 message
 pcl::PointCloud<pcl::PointXYZ>::Ptr extract_points(const sensor_msgs::msg::PointCloud2 & msg)
   {
-    auto cloud = pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>());
     pcl::fromROSMsg(msg, *cloud);
     return cloud;
   }
+
+// Convert the cloud back to a PointCloud2 message
+sensor_msgs::msg::PointCloud2 convert_points(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud){
+  sensor_msgs::msg::PointCloud2 msg;
+  pcl::toROSMsg(*cloud, msg);
+  return msg;
+}
 
 // Computes the distance between a point and a plane
 float distance_from_plane(const pcl::PointXYZ point, const Plane plane){
@@ -86,8 +102,6 @@ std::vector<pcl::PointXYZ> sample_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr clou
     // Initialise output to zero
     pcl::PointXYZ zero_point(0.0f, 0.0f, 0.0f); // enforces zero on initialisation
     std::vector<pcl::PointXYZ> point_set(3, zero_point);
-
-    bool loop_flag = true;
 
     int randn;
     int randn_1 = -1;
@@ -147,9 +161,6 @@ Plane generate_plane(std::vector<pcl::PointXYZ> vector_set){
     // coplanar vectors
     pcl::PointXYZ coplanar_vector_a = vector_diff(vector_set[1], vector_set[0]);
     pcl::PointXYZ coplanar_vector_b = vector_diff(vector_set[2], vector_set[0]);
-
-    std::cout << "edge1: " << coplanar_vector_a.x << "," << coplanar_vector_a.y << "," << coplanar_vector_a.z << std::endl;
-    std::cout << "edge2: " << coplanar_vector_b.x << "," << coplanar_vector_b.y << "," << coplanar_vector_b.z << std::endl;
 
     // normal vector
     pcl::PointXYZ normal_vector = cross_product(coplanar_vector_a, coplanar_vector_b);
