@@ -11,6 +11,7 @@
 
 
 #define RANSAC_THRESHOLD 2
+#define RANSAC_SIMULATIONS 100
 
 class GroundSegmenter : public rclcpp::Node
 {
@@ -20,7 +21,30 @@ public:
   {
     auto topic_callback =
       [this](sensor_msgs::msg::PointCloud2::UniquePtr msg) -> void {
+        
+        // extract points and ransac
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = extract_points(*msg); // TODO: add an exception catch here
+        Plane best_fit_plane = ransac(cloud);
+
+        // loop variables
+        pcl::PointXYZ pt;
+        float pt_dist;
+        pcl::PointCloud<pcl::PointXYZ>::Ptr inlier_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+        pcl::PointCloud<pcl::PointXYZ>::Ptr outlier_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+        
+        // extract points that comply with plane of best fit
+        for(size_t i = 0; i < cloud->points.size(); i++){
+          pt = cloud->points[i];
+          pt_dist = distance_from_plane(pt, best_fit_plane);
+
+          if(pt_dist < RANSAC_THRESHOLD){
+            inlier_cloud->points.push_back(pt);
+          } else if (pt_dist >= RANSAC_THRESHOLD){
+            outlier_cloud->points.push_back(pt);
+          } else{
+            RCLCPP_WARN(this->get_logger(), "Point not defined as an inlier or outlier");
+          } 
+        }
       };
 
     subscription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/lidar", rclcpp::SensorDataQoS(), topic_callback);
@@ -139,7 +163,7 @@ Plane generate_plane(std::vector<pcl::PointXYZ> vector_set){
 }
 
 // Conduct the RANSAC algorithm
-Plane ransac(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, const size_t num_simulations){
+Plane ransac(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud){
   const size_t total_points = cloud->points.size();
 
   // initialise loop variables
@@ -150,7 +174,7 @@ Plane ransac(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, const size_t num_simulat
   int bestfit_num_inliers = 0;
 
   // iterate over a fixed number of simulations
-  for(size_t i = 0; i < num_simulations; i++){
+  for(size_t i = 0; i < RANSAC_SIMULATIONS; i++){
     // generate a random plane
     std::vector<pcl::PointXYZ> rand_pt_set = sample_cloud(cloud);
     proposed_plane = generate_plane(rand_pt_set);
@@ -178,7 +202,6 @@ Plane ransac(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, const size_t num_simulat
 
   return plane_of_best_fit;
 }
-
 
 };
 
