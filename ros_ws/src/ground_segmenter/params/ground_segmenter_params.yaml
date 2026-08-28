@@ -1,0 +1,4 @@
+ground_segmenter:
+  ros__parameters:
+    ransac_threshold: 3.0
+    ransac_simulations: 10

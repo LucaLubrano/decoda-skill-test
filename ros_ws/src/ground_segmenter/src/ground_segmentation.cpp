@@ -10,10 +10,6 @@
 #include "pcl/point_types.h"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 
-
-#define RANSAC_THRESHOLD 2
-#define RANSAC_SIMULATIONS 100
-
 class GroundSegmenter : public rclcpp::Node
 {
 public:
@@ -22,10 +18,13 @@ public:
   {
     auto topic_callback =
       [this](sensor_msgs::msg::PointCloud2::UniquePtr msg) -> void {
+
+        double threshold = this->get_parameter("ransac_threshold").as_double();
+        int simulations = this->get_parameter("ransac_simulations").as_int();
         
         // extract points and ransac
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = extract_points(*msg); // TODO: add an exception catch here
-        Plane best_fit_plane = ransac(cloud);
+        Plane best_fit_plane = ransac(cloud, threshold, simulations);
 
         // loop variables
         pcl::PointXYZ pt;
@@ -38,22 +37,31 @@ public:
           pt = cloud->points[i];
           pt_dist = distance_from_plane(pt, best_fit_plane);
 
-          if(pt_dist < RANSAC_THRESHOLD){
+          if(pt_dist < threshold){
             inlier_cloud->points.push_back(pt);
-          } else if (pt_dist >= RANSAC_THRESHOLD){
+          } else if (pt_dist >= threshold){
             outlier_cloud->points.push_back(pt);
           } else{
             RCLCPP_WARN(this->get_logger(), "Point not defined as an inlier or outlier");
           } 
         }
 
-        inlier_publisher_->publish(convert_points(inlier_cloud));
-        outlier_publisher_->publish(convert_points(outlier_cloud));
+        sensor_msgs::msg::PointCloud2 inlier_msg = convert_points(inlier_cloud);
+        sensor_msgs::msg::PointCloud2 outlier_msg = convert_points(outlier_cloud);        
+
+        inlier_msg.header = msg->header;
+        outlier_msg.header = msg->header;
+
+        inlier_publisher_->publish(inlier_msg);
+        outlier_publisher_->publish(outlier_msg);
       };
 
     subscription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/lidar", rclcpp::SensorDataQoS(), topic_callback);
     inlier_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/ground_points", rclcpp::SensorDataQoS());
     outlier_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/obstacle_points", rclcpp::SensorDataQoS());
+
+    this->declare_parameter<double>("ransac_threshold", 2.0);
+    this->declare_parameter<int>("ransac_simulations", 10);
 
   }
   // Struct def for easier usage 
@@ -174,7 +182,7 @@ Plane generate_plane(std::vector<pcl::PointXYZ> vector_set){
 }
 
 // Conduct the RANSAC algorithm
-Plane ransac(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud){
+Plane ransac(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, float threshold, int simulations){
   const size_t total_points = cloud->points.size();
 
   // initialise loop variables
@@ -185,7 +193,7 @@ Plane ransac(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud){
   int bestfit_num_inliers = 0;
 
   // iterate over a fixed number of simulations
-  for(size_t i = 0; i < RANSAC_SIMULATIONS; i++){
+  for(int i = 0; i < simulations; i++){
     // generate a random plane
     std::vector<pcl::PointXYZ> rand_pt_set = sample_cloud(cloud);
     proposed_plane = generate_plane(rand_pt_set);
@@ -197,7 +205,7 @@ Plane ransac(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud){
       float cur_pt_dist = distance_from_plane(pt, proposed_plane);
 
       // check if this distance is less than a prescribed threshold
-      if(cur_pt_dist < RANSAC_THRESHOLD){
+      if(cur_pt_dist < threshold){
         proposed_num_inliers++;
       }
     }
