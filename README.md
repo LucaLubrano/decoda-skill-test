@@ -67,11 +67,6 @@ However, it captures all obstacles throughout the drive and we can reduce the in
 
 I chose the RANSAC algorithm as it takes advantage of the stark geometric features within the environment. Since, DECODA has a strong focus on mining environments, which are often structured especially within heavy haulage routes, this was determined as a suitable method to choose. Other methods that were researched were voxel-based segmentation and slope evaluation. A voxel-based approach was not chosen as it was deemed unnecessarily complex for the features of the data. A slope evaluation for determining the obstacles was deemed unsuitable for a mining environment as haulage roads may have vertical faces which could conflict with the obstacle indetification criterian.
 
-<video width="320" height="240" controls>
-  <source src="./images/full_run.mp4" type="video/mp4">
-</video>
-
-
 ### Assumptions
 
 The most obvious assumption that I made for this project was that the *obstacles* in the data were the posts. One could also make the assumption that the edges of the road are obstacles, as they are presumably an undesirable location for the haulage trucks to access. By taking both of these assumptions into account, the current solution is a minimal and simplistic solution to the problem.
