@@ -57,9 +57,20 @@ ros2 bag play data/lidar/
 
 The design philospohy for this project was to use random sample consensus (RANSAC) to segment the ground and obstacle objects based on conformance to planes. This was chosen since when I inspected the raw LiDAR point cloud it was evident that the data collected had clear geometric features. These features being a road, and two angled walls opposing the road, the obstacles themselves appeared to be clearly visible posts which the RANSAC algorithm is well suited to find.
 
-In this implementation I build from first principles a single plane RANSAC algorithm. I do this to demonstrate my programatic skill set and understanding of the underlying mathematics involved in these kinds of algorithms (coming from my dual degree in mathematics). As such, the only external dependencies that are used is point cloud library. The single plane implementation is a showcase model, and confuses features on towards the extremity of the frame as obstacles. However, it captures all obstacles throughout the drive and we can reduce the inclusion of gradient road surfaces by trivially including extra RANSAC layering.
+![obstacle_example](./images/obstacle_example.png)
+
+In this implementation I build from first principles a single plane RANSAC algorithm. I do this to demonstrate my programatic skill set and understanding of the underlying mathematics involved in these kinds of algorithms (coming from my dual degree in mathematics). As such, the only external dependencies that are used is point cloud library. The single plane implementation is a showcase model, and confuses features towards the extremity of the frame as obstacles.
+
+![false_positive_example](./images/false_positive_example.png)
+
+However, it captures all obstacles throughout the drive and we can reduce the inclusion of gradient road surfaces by trivially including extra RANSAC layering.
 
 I chose the RANSAC algorithm as it takes advantage of the stark geometric features within the environment. Since, DECODA has a strong focus on mining environments, which are often structured especially within heavy haulage routes, this was determined as a suitable method to choose. Other methods that were researched were voxel-based segmentation and slope evaluation. A voxel-based approach was not chosen as it was deemed unnecessarily complex for the features of the data. A slope evaluation for determining the obstacles was deemed unsuitable for a mining environment as haulage roads may have vertical faces which could conflict with the obstacle indetification criterian.
+
+<video width="320" height="240" controls>
+  <source src="./images/full_run.mp4" type="video/mp4">
+</video>
+
 
 ### Assumptions
 
