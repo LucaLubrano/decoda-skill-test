@@ -1,4 +1,6 @@
 ground_segmenter:
   ros__parameters:
-    ransac_threshold: 3.0
-    ransac_simulations: 10
+    ransac_threshold: 2.0
+    ransac_simulations: 20
+    ransac_subsample: 50
+    ransac_subsample_flag: true

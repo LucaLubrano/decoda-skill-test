@@ -21,10 +21,22 @@ public:
 
         double threshold = this->get_parameter("ransac_threshold").as_double();
         int simulations = this->get_parameter("ransac_simulations").as_int();
+        int subsample = this->get_parameter("ransac_subsample").as_int();
+        bool subsample_flag = this->get_parameter("ransac_subsample_flag").as_bool();
         
+        // Initialise variables
+        Plane best_fit_plane;
+        // Prepare random device - keep alive entire node life
+        std::random_device rd;
+        std::mt19937 gen(rd());
+
         // extract points and ransac
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = extract_points(*msg); // TODO: add an exception catch here
-        Plane best_fit_plane = ransac(cloud, threshold, simulations);
+        if(subsample_flag){
+          best_fit_plane = ransac(cloud, threshold, simulations, subsample, gen);
+        } else {
+          best_fit_plane = ransac(cloud, threshold, simulations, gen);
+        }
 
         // loop variables
         pcl::PointXYZ pt;
@@ -33,9 +45,10 @@ public:
         pcl::PointCloud<pcl::PointXYZ>::Ptr outlier_cloud(new pcl::PointCloud<pcl::PointXYZ>());
         
         // extract points that comply with plane of best fit
+        float plane_magnitude = sqrt(pow(best_fit_plane.A, 2) + pow(best_fit_plane.C, 2) + pow(best_fit_plane.B, 2));
         for(size_t i = 0; i < cloud->points.size(); i++){
           pt = cloud->points[i];
-          pt_dist = distance_from_plane(pt, best_fit_plane);
+          pt_dist = distance_from_plane(pt, best_fit_plane, plane_magnitude);
 
           if(pt_dist < threshold){
             inlier_cloud->points.push_back(pt);
@@ -62,6 +75,8 @@ public:
 
     this->declare_parameter<double>("ransac_threshold", 2.0);
     this->declare_parameter<int>("ransac_simulations", 10);
+    this->declare_parameter<int>("ransac_subsample", 1);
+    this->declare_parameter<bool>("ransac_subsample_flag", false);
 
   }
   // Struct def for easier usage 
@@ -90,20 +105,14 @@ sensor_msgs::msg::PointCloud2 convert_points(const pcl::PointCloud<pcl::PointXYZ
 }
 
 // Computes the distance between a point and a plane
-float distance_from_plane(const pcl::PointXYZ point, const Plane plane){
+float distance_from_plane(const pcl::PointXYZ point, const Plane plane, const float plane_magnitude){
   float numerator = abs(plane.A * point.x + plane.B * point.y + plane.C * point.z + plane.D);
-  float denominator = sqrt(pow(plane.A, 2) + pow(plane.C, 2) + pow(plane.B, 2)); // TODO: keep this elsewhere to reduce redundant computations
-  float distance = numerator / denominator; 
+  float distance = numerator / plane_magnitude; 
   return distance;
 }
 
 // Samples the point cloud, used to generate plane for RANSAC process
-std::vector<pcl::PointXYZ> sample_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud){
-    // TODO: put in loop outside this function
-    // Prepare random device
-    std::random_device rd;
-    std::mt19937 gen(rd());
-
+std::vector<pcl::PointXYZ> sample_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, std::mt19937 & gen){
     // Determine bounds of RNG
     std::uniform_int_distribution<int> unif(0, cloud->points.size()-1); 
 
@@ -181,8 +190,8 @@ Plane generate_plane(std::vector<pcl::PointXYZ> vector_set){
     return plane;
 }
 
-// Conduct the RANSAC algorithm
-Plane ransac(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, float threshold, int simulations){
+// Conduct the single plane RANSAC algorithm
+Plane ransac(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, float threshold, int simulations, std::mt19937 & gen){
   const size_t total_points = cloud->points.size();
 
   // initialise loop variables
@@ -195,14 +204,57 @@ Plane ransac(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, float threshold, int sim
   // iterate over a fixed number of simulations
   for(int i = 0; i < simulations; i++){
     // generate a random plane
-    std::vector<pcl::PointXYZ> rand_pt_set = sample_cloud(cloud);
+    std::vector<pcl::PointXYZ> rand_pt_set = sample_cloud(cloud, gen);
     proposed_plane = generate_plane(rand_pt_set);
-    
+    float plane_magnitude = sqrt(pow(proposed_plane.A, 2) + pow(proposed_plane.C, 2) + pow(proposed_plane.B, 2));
+
     // iterate over the entire cloud and compare to our proposed_plane
     for(size_t cur_pt_idx = 0; cur_pt_idx < total_points; cur_pt_idx++){
       // check the current distance from the point to the proposed plane
       pt = cloud->points[cur_pt_idx];
-      float cur_pt_dist = distance_from_plane(pt, proposed_plane);
+      float cur_pt_dist = distance_from_plane(pt, proposed_plane, plane_magnitude);
+
+      // check if this distance is less than a prescribed threshold
+      if(cur_pt_dist < threshold){
+        proposed_num_inliers++;
+      }
+    }
+    
+    // Check if the proposed plane beats the current plane of best fit
+    if(proposed_num_inliers > bestfit_num_inliers){
+      plane_of_best_fit = proposed_plane;
+      bestfit_num_inliers = proposed_num_inliers;
+    }
+
+    proposed_num_inliers = 0; // reset for next itr
+  }
+
+  return plane_of_best_fit;
+}
+
+// Conduct single plane RANSAC algorithm using a subsample of the point cloud
+Plane ransac(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, float threshold, int simulations, int subsample, std::mt19937 & gen){
+  const size_t total_points = cloud->points.size();
+
+  // initialise loop variables
+  Plane plane_of_best_fit;
+  Plane proposed_plane;
+  pcl::PointXYZ pt;
+  int proposed_num_inliers = 0;
+  int bestfit_num_inliers = 0;
+
+  // iterate over a fixed number of simulations
+  for(int i = 0; i < simulations; i++){
+    // generate a random plane
+    std::vector<pcl::PointXYZ> rand_pt_set = sample_cloud(cloud, gen);
+    proposed_plane = generate_plane(rand_pt_set);
+    float plane_magnitude = sqrt(pow(proposed_plane.A, 2) + pow(proposed_plane.C, 2) + pow(proposed_plane.B, 2));
+    
+    // iterate over the entire cloud and compare to our proposed_plane
+    for(size_t cur_pt_idx = 0; cur_pt_idx < total_points; cur_pt_idx += subsample){
+      // check the current distance from the point to the proposed plane
+      pt = cloud->points[cur_pt_idx];
+      float cur_pt_dist = distance_from_plane(pt, proposed_plane, plane_magnitude);
 
       // check if this distance is less than a prescribed threshold
       if(cur_pt_dist < threshold){
